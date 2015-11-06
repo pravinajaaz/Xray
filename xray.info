@@ -1,0 +1,3 @@
+name = X-ray
+description = "Replica of Drupal X-ray."
+core = 7.x

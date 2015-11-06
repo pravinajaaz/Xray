@@ -1,0 +1,112 @@
+<?php
+
+
+/**
+ * Implements hook_menu().
+ */
+function xray_menu() {
+  $items = array();
+
+  $items['xray'] = array(
+    'title' => 'X ray',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('form_xray'),
+    'access callback' => TRUE,
+  );
+   $items['x-ray'] = array(
+    'title' => 'xray callback',
+    'page callback' => 'xray_page',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+  );
+  $items['test'] = array(
+    'title' => 'test',
+    'page callback' => 'test_page',
+    'access callback' => TRUE,
+  );
+   $items['xray_version'] = array(
+    'title' => 'xray_version',
+    'page callback' => 'xray_version',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+function test_page() {
+  $up_url = "http://updates.drupal.org/release-history/panels/8.x";
+  $update_info = simplexml_load_file($up_url);
+  echo "<pre>"; print_r($update_info->api_version); die;
+}
+
+function xray_version() {
+  $site_url = $_POST['siteurl'];
+  $file = file_get_contents('http://' . $site_url . '/CHANGELOG.txt');
+  $line = explode(',', $file);
+  $output = '<p>This site runs on <b>' . $line[0] . '</b></p>';
+  drupal_json_output(array('data' => $output));
+}
+
+function form_xray($form, &$form_state) {
+  drupal_add_js(drupal_get_path('module', 'xray') . '/xray.js');
+  drupal_add_css(drupal_get_path('module', 'xray') . '/xray.css');
+  $form['site'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Site Name'),
+  );
+
+  $form['preview'] = array(
+    '#type' => 'button',
+    '#value' => t('Preview'),
+    '#attributes' => array('class' => array('xray-preview')),
+  );
+  $form['version'] = array(
+    '#type' => 'markup',
+    '#markup' => '<div class="version"></div>',
+  );
+  $form['list'] = array(
+    '#type' => 'markup',
+    '#markup' => '<ul class="module-list"></ul><div class="loading"></div>',
+  );
+  return $form;
+}
+
+
+function xray_page() {
+  $site_url = $_POST['siteurl'];
+  $count = $_POST['count'];
+  $flag = 0;
+  $output = '';
+  if ($cache = cache_get('xray_top_modules')) {
+    $top_modules = $cache->data;
+  }
+  else {
+    $str = file_get_contents('https://www.drupal.org/api-d7/node.json?type=project_module&field_project_type=full&limit=10&sort=field_download_count&direction=DESC');
+    $json = json_decode($str, true);
+    foreach ($json['list'] as $value) {
+      $top_modules[] = $value['field_project_machine_name'];
+    }
+    cache_set('xray_top_modules', $top_modules);
+  }
+  if(!isset($top_modules[$count])) {
+    $flag = 1;
+  }
+  else {
+    $ch = curl_init($site_url . "/sites/all/modules/" . $top_modules[$count] ."/LICENSE.txt");
+    curl_setopt($ch, CURLOPT_NOBODY, true);
+    curl_exec($ch);
+    $retcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $d8_available = "";
+    if($retcode == '200') {
+      $up_url = "http://updates.drupal.org/release-history/". $top_modules[$count] . "/8.x";
+      $update_info = simplexml_load_file($up_url);
+      if(isset($update_info->api_version)) {
+        $d8_available = " - Drupal 8 branch is available";
+      }
+      $output = '<li><a href="http://www.drupal.org/project/' . $top_modules[$count] . '">' . $top_modules[$count] . '</a>' . $d8_available .'</li>';
+    }
+    curl_close($ch);
+  }
+
+  drupal_json_output(array('data' => $output, 'count' => ++$count, 'flag' => $flag));
+}
